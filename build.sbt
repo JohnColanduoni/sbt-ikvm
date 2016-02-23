@@ -2,7 +2,7 @@ import sbt.Keys._
 
 val sharedSettings = Seq(
   organization := "com.hevylight",
-  version := "0.2.1-SNAPSHOT",
+  version := "0.2.2-SNAPSHOT",
   bintrayOrganization := Some("hevylight")
 )
 
