@@ -2,7 +2,8 @@ import sbt.Keys._
 
 val sharedSettings = Seq(
   organization := "com.hevylight",
-  version := "0.1-SNAPSHOT"
+  version := "0.1",
+  bintrayOrganization := Some("hevylight")
 )
 
 lazy val plugin = (project in file("."))
@@ -25,6 +26,11 @@ lazy val plugin = (project in file("."))
       val p = (publishLocal in ikvmPackage).value
       publishLocal.value
     }
+  )
+  .settings(
+    bintrayRepository := "sbt-plugins",
+    licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0")),
+    publishMavenStyle := false
   )
   .dependsOn(ikvmPackage)
 
@@ -51,6 +57,11 @@ lazy val ikvmPackage = Project("ikvm", file("ikvmPackage"))
 
       (ikvmFiles pair Path.rebase(ikvmPath, "ikvm")) :+ (fileListPath -> "ikvm/files_list")
     }
+  )
+  .settings(
+    licenses ++= Seq(
+      ("GPL-2.0", url("https://www.gnu.org/licenses/gpl-2.0.en.html"))
+    )
   )
 
     
