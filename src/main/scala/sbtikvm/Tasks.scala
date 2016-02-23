@@ -116,20 +116,14 @@ object Tasks {
         caller <- moduleReport.callers
       } yield (caller.caller, moduleReport.module)
 
-      println(edges)
-
       object ModuleOrdering extends Ordering[ModuleID] {
         def compare(x: ModuleID, y: ModuleID): Int = {
-          val ret = if(dependsOn(x, y))
+          if(dependsOn(x, y))
             1
           else if(dependsOn(y, x))
             -1
           else
             0
-
-          println(s"$x - $y = $ret")
-
-          ret
         }
 
         private def dependsOn(x: ModuleID, y: ModuleID): Boolean = {
@@ -140,7 +134,17 @@ object Tasks {
         }
 
         private def moduleEqual(x: ModuleID, y: ModuleID): Boolean = {
-          x.toString() == y.toString()
+          def crossCheck(a: ModuleID, b: ModuleID): Boolean = {
+            a.name.startsWith(b.name) &&
+              a.crossVersion == CrossVersion.Disabled &&
+              a.name.substring(b.name.length).matches("""_\d+.\d+""")
+          }
+
+          x.organization == y.organization && {
+            x.name == y.name || {
+              crossCheck(x, y) || crossCheck(y, x)
+            }
+          } && x.revision == y.revision
         }
       }
 
