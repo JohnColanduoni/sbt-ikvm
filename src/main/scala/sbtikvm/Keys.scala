@@ -19,5 +19,7 @@ object Keys {
   // ikvmc-related keys
   val netOutputType = SettingKey[OutputType]("netOutputType", ".NET assembly output type")
   val netAssemblyName = SettingKey[String]("netAssemblyName", ".NET assembly name")
+  val netTranspileDependencies = TaskKey[Seq[File]]("netTranspileDependencies", "Transpile dependency jars to .NET assemblies.")
+  val netCopyReferences = TaskKey[Unit]("netCopyReferences", "Copy .NET references to output directory.")
   val netPackage = TaskKey[File]("netPackage", "Create .NET assembly.")
 }

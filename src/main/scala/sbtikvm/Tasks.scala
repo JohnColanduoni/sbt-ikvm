@@ -20,18 +20,7 @@ object Tasks {
         case VersionPattern(m, _*) => m.toInt
         case _ => throw new RuntimeException("Invalid .NET framework version.")
       }
-      val paths = file("""C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v""" + version) :: {
-        val frameworksPath = file("""C:\Windows\Microsoft.NET\Framework""")
-        frameworksPath.list()
-          .view
-          .map { frameworksPath / _  }
-          .find { _.getName.startsWith(s"v$major.") }
-          .getOrElse { throw new RuntimeException("Invalid .NET framework version.") }
-      } :: Nil
-
-      println(paths)
-
-      paths
+      file("""C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v""" + version) :: Nil
     },
 
     netReferences := Seq(
@@ -66,8 +55,12 @@ object Tasks {
       val ikvmstubPath = ikvmPath.value / "bin" / "ikvmstub.exe"
       val stubPaths = references.map { ref => outputPath / s"${ref.name}.jar" }
 
+      val args = ArrayBuffer[String]()
+      args += "-nostdlib"
+      args ++= referencePaths.map { path => s"-lib:$path" }
+
       resolvedReferences.zip(stubPaths).foreach { case (assemblyPath, jarPath) =>
-        val ret = Seq(ikvmstubPath.toString, assemblyPath.toString, s"-out:$jarPath").!
+        val ret = (Seq(ikvmstubPath.toString, assemblyPath.toString) ++ args ++ Seq(s"-out:$jarPath")).!
         if(ret != 0)
           throw new RuntimeException("ikvmstub.exe failed")
       }
@@ -78,35 +71,117 @@ object Tasks {
 
     netOutputType := OutputType.Executable,
     netAssemblyName := name.value,
-    netPackage := {
+    netTranspileDependencies := {
+      val s = streams.value
       val ikvmcPath = ikvmPath.value / "bin" / "ikvmc.exe"
 
-      val jarPath = (packageBin in Compile).value
+      val outputPath = netOutputPath.value
+      val stubs = makeNetStubs.value.map { _.getCanonicalPath }
+      val resolvedReferences = netResolvedReferences.value
+
+      val dependencies = (dependencyClasspath in Compile).value
+        // Filter stubs
+        .filter { cp => !stubs.contains(cp.data.getCanonicalPath) }
+
+      val assemblies = dependencies.map { cp =>
+        val assemblyName = cp.metadata.get(AttributeKey[ModuleID]("module-id"))
+          .map { id =>
+            id.organization + "." + id.name
+          }
+          .getOrElse {
+            val fileName = cp.data.getName
+            val assemblyName = if(fileName.endsWith(".jar")) {
+              fileName.substring(0, fileName.length - 4)
+            } else {
+              fileName
+            }
+          }
+        outputPath / (assemblyName + ".dll")
+      }
+
+      dependencies.zip(assemblies).foreach { case (cp, assembly) =>
+          if(!cp.data.isFile)
+            throw new RuntimeException("Dependencies must be in the form of jar files. " +
+              "You must set 'exportJars := true' for any project dependencies.")
+
+          s.log.info(s"Transpiling ${cp.data}")
+          val ret = ikvmc(ikvmcPath, assembly, Seq(cp.data), resolvedReferences)
+          if(ret != 0)
+            throw new RuntimeException("ikvmc.exe failed")
+      }
+
+      assemblies
+    },
+    netCopyReferences := {
+      val outputPath = netOutputPath.value
+
+      // Copy resolved references
+      val resolvedReferences = netResolvedReferences.value
+      resolvedReferences
+        // Filter framework assemblies
+        .filter { file =>
+          !file.toString.startsWith("""C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework""")
+        }
+        .foreach { file =>
+        IO.copyFile(file, outputPath / file.getName, preserveLastModified = true)
+      }
+
+      // Copy IKVM libraries
+      val ikvmBinPath = ikvmPath.value / "bin"
+      ikvmBinPath
+        .list()
+        .filter { _.endsWith(".dll") }
+        .map { ikvmBinPath / _ }
+        .foreach { file =>
+          IO.copyFile(file, outputPath / file.getName, preserveLastModified = true)
+        }
+    },
+    netPackage := {
+      val s = streams.value
+      netCopyReferences.value
+
+      val ikvmcPath = ikvmPath.value / "bin" / "ikvmc.exe"
+
+      val inputJar = (packageBin in Compile).value
       val outputType = netOutputType.value
       val extension = outputType match {
         case OutputType.Executable => "exe"
         case OutputType.Library => "dll"
       }
       val outputPath = netOutputPath.value / (netAssemblyName.value + "." + extension)
-
       val resolvedReferences = netResolvedReferences.value
+      val transpiledDependencies = netTranspileDependencies.value
 
-      val command = ArrayBuffer(ikvmcPath.toString, jarPath.toString)
-      command += s"-out:$outputPath"
-
-      // Add references
-      command ++= resolvedReferences.map { path => s"-r:$path" }
-
+      val extraArgs = ArrayBuffer[String]()
       if(outputType == OutputType.Executable) {
-        command +=
+        extraArgs +=
           s"-main:${(mainClass in Compile).value.getOrElse { throw new RuntimeException("Main class required for executable.") }}"
       }
 
-      val ret = command.!
+      s.log.info(s"Transpiling $inputJar")
+      val ret = ikvmc(ikvmcPath, outputPath, Seq(inputJar), resolvedReferences ++ transpiledDependencies, extraArgs)
       if(ret != 0)
         throw new RuntimeException("ikvmc.exe failed")
 
       outputPath
     }
   )
+
+  private def ikvmc(ikvmcPath: File,
+                    outputPath: File,
+                    inputs: Seq[File],
+                    netReferences: Seq[File],
+                    extraArgs: Seq[String] = Nil): Int = {
+    val command = ArrayBuffer(ikvmcPath.toString)
+    command ++= inputs.map { _.toString }
+    command += s"-out:$outputPath"
+    command += "-nostdlib"
+    command += "-nologo"
+    command += "-warnaserror:0100"
+
+    command ++= netReferences.map { path => s"-r:$path" }
+    command ++= extraArgs
+
+    command.!
+  }
 }
