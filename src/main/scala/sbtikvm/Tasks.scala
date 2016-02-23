@@ -10,9 +10,14 @@ import Keys._
 import scala.collection.mutable.ArrayBuffer
 
 object Tasks {
-  val netSettings = Seq(
-    netOutputPath := target.value / "net",
-    netFrameworkVersion := "4.5",
+  val netTasks = Seq(
+    ikvmPath := {
+      val outputPath = target.value / "ikvm"
+      IO.createDirectory(outputPath)
+      ikvm.Extract.extract(outputPath)
+      outputPath
+    },
+
     netReferencePaths := {
       val version = netFrameworkVersion.value
       val VersionPattern = """(\d+)\.\d+(\.\d+)?""".r
@@ -20,14 +25,20 @@ object Tasks {
         case VersionPattern(m, _*) => m.toInt
         case _ => throw new RuntimeException("Invalid .NET framework version.")
       }
-      file("""C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v""" + version) :: Nil
-    },
 
-    netReferences := Seq(
-      "mscorlib",
-      "System",
-      "System.Core"
-    ).map { AssemblyReference(_) },
+      val referenceAssemblies = if(isWindows) {
+        file("""C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v""" + version)
+      } else {
+        // Find mono library path
+        if(System.getProperty("os.name") == "Mac OS X") {
+          file("/Library/Frameworks/Mono.framework/Versions/Current/lib/mono/" + version)
+        } else {
+          file("/usr/lib/mono/" + version)
+        }
+      }
+
+      referenceAssemblies :: Nil
+    },
     netResolvedReferences := {
       val references = netReferences.value
       val referencePaths = netReferencePaths.value
@@ -60,7 +71,7 @@ object Tasks {
       args ++= referencePaths.map { path => s"-lib:$path" }
 
       resolvedReferences.zip(stubPaths).foreach { case (assemblyPath, jarPath) =>
-        val ret = (Seq(ikvmstubPath.toString, assemblyPath.toString) ++ args ++ Seq(s"-out:$jarPath")).!
+        val ret = netExec(Seq(ikvmstubPath.toString, assemblyPath.toString) ++ args ++ Seq(s"-out:$jarPath"))
         if(ret != 0)
           throw new RuntimeException("ikvmstub.exe failed")
       }
@@ -69,8 +80,6 @@ object Tasks {
     },
     unmanagedJars in Compile ++= makeNetStubs.value.classpath,
 
-    netOutputType := OutputType.Executable,
-    netAssemblyName := name.value,
     netTranspileDependencies := {
       val s = streams.value
       val ikvmcPath = ikvmPath.value / "bin" / "ikvmc.exe"
@@ -128,6 +137,8 @@ object Tasks {
 
       // Copy IKVM libraries
       val ikvmBinPath = ikvmPath.value / "bin"
+      if(!ikvmBinPath.exists())
+        throw new RuntimeException("Invalid IKVM path.")
       ikvmBinPath
         .list()
         .filter { _.endsWith(".dll") }
@@ -182,6 +193,16 @@ object Tasks {
     command ++= netReferences.map { path => s"-r:$path" }
     command ++= extraArgs
 
-    command.!
+    netExec(command)
   }
+
+  private def netExec(command: Seq[String]): Int = {
+    if(isWindows) {
+      command.!
+    } else {
+      (Seq("mono") ++ command).!
+    }
+  }
+
+  private def isWindows: Boolean = System.getProperty("os.name").startsWith("Windows")
 }

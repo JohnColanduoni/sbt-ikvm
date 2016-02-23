@@ -1,18 +1,56 @@
-organization := "com.hevylight"
+import sbt.Keys._
 
-name := "sbt-ikvm"
+val sharedSettings = Seq(
+  organization := "com.hevylight",
+  version := "0.1-SNAPSHOT"
+)
 
-version := "0.1-SNAPSHOT"
+lazy val plugin = (project in file("."))
+  .settings(sharedSettings)
+  .settings(
+    name := "sbt-ikvm",
+    sbtPlugin := true
+  )
+  // SBT tests
+  .settings(
+    scriptedSettings,
+    sbtTestDirectory <<= baseDirectory (_ / "sbt-test"),
+    scriptedLaunchOpts ++= {
+      val ikvmPackageTarget = (target in ikvmPackage).value
+      val ikvmPackageVersion = (version in ikvmPackage).value
+      Seq("-Xmx1024M", "-Dplugin.version=" + version.value)
+    },
+    scriptedBufferLog := false,
+    publishLocal := {
+      val p = (publishLocal in ikvmPackage).value
+      publishLocal.value
+    }
+  )
+  .dependsOn(ikvmPackage)
 
-sbtPlugin := true
+lazy val ikvmPackage = Project("ikvm", file("ikvmPackage"))
+  .settings(sharedSettings)
+  .settings(
+    name := "ikvm-bin",
+    version := "8.1.5717.0",
+    crossPaths := false,
+    autoScalaLibrary := false
+  )
+  // Unzip IKVM
+  .settings(
+    mappings in Compile in packageBin ++= {
+      val targetPath = target.value
+      val versionValue = version.value
+      IO.unzip(baseDirectory.value / s"ikvmbin-$versionValue.zip", targetPath)
+      val ikvmPath = targetPath / s"ikvm-$versionValue"
 
-scriptedSettings
+      // Write manifest
+      val ikvmFiles = ikvmPath.**(-DirectoryFilter).get
+      val fileListPath = targetPath / "files_list"
+      IO.write(fileListPath, ikvmFiles.map { _.relativeTo(ikvmPath).get }.mkString("\n"))
 
-sbtTestDirectory <<= baseDirectory (_ / "sbt-test")
+      (ikvmFiles pair Path.rebase(ikvmPath, "ikvm")) :+ (fileListPath -> "ikvm/files_list")
+    }
+  )
 
-scriptedLaunchOpts := { scriptedLaunchOpts.value ++
-  Seq("-Xmx1024M", "-XX:MaxPermSize=256M", "-Dplugin.version=" + version.value, "-Dikvm.path=" + (target.value / "ikvm"))
-}
-
-scriptedBufferLog := false
     

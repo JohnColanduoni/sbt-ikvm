@@ -5,5 +5,7 @@ executable via [IKVM](http://www.ikvm.net/).
 
 ## License
 
-`sbt-ikvm` is released under the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0.html). The
-license can be found in the `LICENSE` file at the root of the distribution.
+The sbt plugin is released under the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0.html).
+The test of this license can be found in the `LICENSE` file at the root of the distribution.
+
+IKVM's license information can be found within `ikvmPackage/LICENSE`.
