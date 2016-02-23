@@ -108,15 +108,21 @@ object Tasks {
         outputPath / (assemblyName + ".dll")
       }
 
-      dependencies.zip(assemblies).foreach { case (cp, assembly) =>
+      val alreadyTranspiled = ArrayBuffer[File]()
+
+      dependencies.zip(assemblies)
+        // We do this in reverse to properly resolve dependencies between class-path dependencies
+        .reverseIterator.foreach { case (cp, assembly) =>
           if(!cp.data.isFile)
             throw new RuntimeException("Dependencies must be in the form of jar files. " +
               "You must set 'exportJars := true' for any project dependencies.")
 
           s.log.info(s"Transpiling ${cp.data}")
-          val ret = ikvmc(ikvmcPath, assembly, Seq(cp.data), resolvedReferences)
+          val ret = ikvmc(ikvmcPath, assembly, Seq(cp.data), resolvedReferences ++ alreadyTranspiled)
           if(ret != 0)
             throw new RuntimeException("ikvmc.exe failed")
+
+          alreadyTranspiled += assembly
       }
 
       assemblies
@@ -164,6 +170,7 @@ object Tasks {
       val transpiledDependencies = netTranspileDependencies.value
 
       val extraArgs = ArrayBuffer[String]()
+
       if(outputType == OutputType.Executable) {
         extraArgs +=
           s"-main:${(mainClass in Compile).value.getOrElse { throw new RuntimeException("Main class required for executable.") }}"
