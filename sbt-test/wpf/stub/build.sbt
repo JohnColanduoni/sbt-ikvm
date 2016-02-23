@@ -1,3 +1,0 @@
-netSettings
-
-netReferences += "WindowsBase"

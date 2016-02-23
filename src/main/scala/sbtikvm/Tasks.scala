@@ -108,11 +108,47 @@ object Tasks {
         outputPath / (assemblyName + ".dll")
       }
 
-      val alreadyTranspiled = ArrayBuffer[File]()
+      // Sort dependencies by reference order
+      val configurationReport = update.value.configuration("compile").get
 
+      val edges = for {
+        moduleReport <- configurationReport.modules
+        caller <- moduleReport.callers
+      } yield (caller.caller, moduleReport.module)
+
+      println(edges)
+
+      object ModuleOrdering extends Ordering[ModuleID] {
+        def compare(x: ModuleID, y: ModuleID): Int = {
+          val ret = if(dependsOn(x, y))
+            1
+          else if(dependsOn(y, x))
+            -1
+          else
+            0
+
+          println(s"$x - $y = $ret")
+
+          ret
+        }
+
+        private def dependsOn(x: ModuleID, y: ModuleID): Boolean = {
+          edges
+            .exists { case (greater, lesser) =>
+                moduleEqual(greater, x) && (moduleEqual(lesser, y) || dependsOn(lesser, y))
+            }
+        }
+
+        private def moduleEqual(x: ModuleID, y: ModuleID): Boolean = {
+          x.toString() == y.toString()
+        }
+      }
+
+      val alreadyTranspiled = ArrayBuffer[File]()
       dependencies.zip(assemblies)
+        .sortBy { _._1.metadata(AttributeKey[ModuleID]("module-id")) }(ModuleOrdering)
         // We do this in reverse to properly resolve dependencies between class-path dependencies
-        .reverseIterator.foreach { case (cp, assembly) =>
+        .foreach { case (cp, assembly) =>
           if(!cp.data.isFile)
             throw new RuntimeException("Dependencies must be in the form of jar files. " +
               "You must set 'exportJars := true' for any project dependencies.")
