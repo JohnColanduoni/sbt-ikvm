@@ -1,11 +1,12 @@
 package sbtikvm
 
+import sbt.Keys._
 import sbt._
 
 
 object Keys {
   val netOutputPath = SettingKey[File]("netOutputPath", "Path in which to place .NET build products.")
-  val ikvmPath = SettingKey[File]("ikvmPath", "Path to IKVM installation.")
+  val ikvmPath = TaskKey[File]("ikvmPath", "Path to IKVM installation.")
   val netFrameworkVersion = TaskKey[String]("netFrameworkVersion", "Version of .NET framework to build against.")
   val netReferencePaths = TaskKey[Seq[File]]("netReferencePaths", "Paths to search for referenced assemblies.")
 
@@ -19,5 +20,19 @@ object Keys {
   // ikvmc-related keys
   val netOutputType = SettingKey[OutputType]("netOutputType", ".NET assembly output type")
   val netAssemblyName = SettingKey[String]("netAssemblyName", ".NET assembly name")
+  val netTranspileDependencies = TaskKey[Seq[File]]("netTranspileDependencies", "Transpile dependency jars to .NET assemblies.")
+  val netCopyReferences = TaskKey[Unit]("netCopyReferences", "Copy .NET references to output directory.")
   val netPackage = TaskKey[File]("netPackage", "Create .NET assembly.")
+
+  val defaultSettings = Seq(
+    netOutputPath := target.value / "net",
+    netFrameworkVersion := "4.5",
+    netReferences := Seq(
+      "mscorlib",
+      "System",
+      "System.Core"
+    ).map { AssemblyReference(_) },
+    netOutputType := OutputType.Executable,
+    netAssemblyName := name.value
+  )
 }

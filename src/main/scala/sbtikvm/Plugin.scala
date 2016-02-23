@@ -21,7 +21,7 @@ object Plugin extends AutoPlugin {
     val netAssemblyName = Keys.netAssemblyName
     val netPackage = Keys.netPackage
 
-    val netSettings = Tasks.netSettings
+    val netSettings = Keys.defaultSettings ++ Tasks.netTasks
 
     implicit def stringToAssembly(name: String): AssemblyReference = AssemblyReference(name)
 

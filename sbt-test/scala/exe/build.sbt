@@ -1,0 +1,3 @@
+netSettings
+
+netAssemblyName := "Test"
