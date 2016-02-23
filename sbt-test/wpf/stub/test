@@ -1,0 +1,2 @@
+> makeNetStubs
+$ exists target/net/stubs/WindowsBase.jar
