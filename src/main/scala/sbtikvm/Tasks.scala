@@ -235,7 +235,6 @@ object Tasks {
     command += s"-out:$outputPath"
     command += "-nostdlib"
     command += "-nologo"
-    command += "-warnaserror:0100"
 
     command ++= netReferences.map { path => s"-r:$path" }
     command ++= extraArgs
