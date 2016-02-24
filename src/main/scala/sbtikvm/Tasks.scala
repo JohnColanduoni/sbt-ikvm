@@ -76,7 +76,9 @@ object Tasks {
           throw new RuntimeException("ikvmstub.exe failed")
       }
 
-      stubPaths
+      val apiPath = ikvmPath.value / "lib" / "ikvm-api.jar"
+
+      stubPaths :+ apiPath
     },
     unmanagedJars in Compile ++= makeNetStubs.value.classpath,
 
@@ -116,14 +118,21 @@ object Tasks {
         caller <- moduleReport.callers
       } yield (caller.caller, moduleReport.module)
 
-      object ModuleOrdering extends Ordering[ModuleID] {
-        def compare(x: ModuleID, y: ModuleID): Int = {
-          if(dependsOn(x, y))
-            1
-          else if(dependsOn(y, x))
-            -1
-          else
-            0
+      object ModuleOrdering extends Ordering[Option[ModuleID]] {
+        def compare(a: Option[ModuleID], b: Option[ModuleID]): Int = {
+          (a, b) match {
+            case (Some(x), Some(y)) =>
+              if(dependsOn(x, y))
+                1
+              else if(dependsOn(y, x))
+                -1
+              else
+                0
+            case (Some(_), None) => -1
+            case (None, Some(_)) => 1
+            case (None, None) => 0
+          }
+
         }
 
         private def dependsOn(x: ModuleID, y: ModuleID): Boolean = {
@@ -150,8 +159,8 @@ object Tasks {
 
       val alreadyTranspiled = ArrayBuffer[File]()
       dependencies.zip(assemblies)
-        .sortBy { _._1.metadata(AttributeKey[ModuleID]("module-id")) }(ModuleOrdering)
-        // We do this in reverse to properly resolve dependencies between class-path dependencies
+        // Sort dependencies so we can compile them in order
+        .sortBy { _._1.metadata.get(AttributeKey[ModuleID]("module-id")) }(ModuleOrdering)
         .foreach { case (cp, assembly) =>
           if(!cp.data.isFile)
             throw new RuntimeException("Dependencies must be in the form of jar files. " +
