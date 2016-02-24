@@ -1,6 +1,7 @@
 package sbtikvm
 
 import java.io.FilenameFilter
+import java.security.MessageDigest
 
 import sbt._
 import sbt.Keys._
@@ -56,6 +57,8 @@ object Tasks {
       }
     },
     makeNetStubs := {
+      val s = streams.value
+
       val references = netReferences.value
       val resolvedReferences = netResolvedReferences.value
       val outputPath = netOutputPath.value / "stubs"
@@ -71,9 +74,17 @@ object Tasks {
       args ++= referencePaths.map { path => s"-lib:$path" }
 
       resolvedReferences.zip(stubPaths).foreach { case (assemblyPath, jarPath) =>
-        val ret = netExec(Seq(ikvmstubPath.toString, assemblyPath.toString) ++ args ++ Seq(s"-out:$jarPath"))
-        if(ret != 0)
-          throw new RuntimeException("ikvmstub.exe failed")
+        val cacheDirectory = s.cacheDirectory / s"net-stub-cache-${pathHash(assemblyPath)}"
+        val cached = FileFunction.cached(cacheDirectory, inStyle = FilesInfo.lastModified, outStyle = FilesInfo.exists) { in =>
+          s.log.info(s"Creating stub for $assemblyPath")
+
+          val ret = netExec(Seq(ikvmstubPath.toString, assemblyPath.toString) ++ args ++ Seq(s"-out:$jarPath"))
+          if(ret != 0)
+            throw new RuntimeException("ikvmstub.exe failed")
+          Set(jarPath)
+        }
+
+        cached(Set(assemblyPath))
       }
 
       val apiPath = ikvmPath.value / "lib" / "ikvm-api.jar"
@@ -166,10 +177,18 @@ object Tasks {
             throw new RuntimeException("Dependencies must be in the form of jar files. " +
               "You must set 'exportJars := true' for any project dependencies.")
 
-          s.log.info(s"Transpiling ${cp.data}")
-          val ret = ikvmc(ikvmcPath, assembly, Seq(cp.data), resolvedReferences ++ alreadyTranspiled)
-          if(ret != 0)
-            throw new RuntimeException("ikvmc.exe failed")
+          val cacheDirectory = s.cacheDirectory / s"net-transpile-cache-${pathHash(cp.data)}"
+          val cached = FileFunction.cached(cacheDirectory, inStyle = FilesInfo.lastModified, outStyle = FilesInfo.exists) { in =>
+            s.log.info(s"Transpiling ${cp.data}")
+
+            val ret = ikvmc(ikvmcPath, assembly, Seq(cp.data), resolvedReferences ++ alreadyTranspiled)
+            if(ret != 0)
+              throw new RuntimeException("ikvmc.exe failed")
+
+            Set(assembly)
+          }
+
+          cached(alreadyTranspiled.toSet + cp.data)
 
           alreadyTranspiled += assembly
       }
@@ -225,10 +244,17 @@ object Tasks {
           s"-main:${(mainClass in Compile).value.getOrElse { throw new RuntimeException("Main class required for executable.") }}"
       }
 
-      s.log.info(s"Transpiling $inputJar")
-      val ret = ikvmc(ikvmcPath, outputPath, Seq(inputJar), resolvedReferences ++ transpiledDependencies, extraArgs)
-      if(ret != 0)
-        throw new RuntimeException("ikvmc.exe failed")
+      val cacheDirectory = s.cacheDirectory / s"net-transpile-cache-${pathHash(inputJar)}"
+      val cached = FileFunction.cached(cacheDirectory, inStyle = FilesInfo.lastModified, outStyle = FilesInfo.exists) { in =>
+        s.log.info(s"Transpiling $inputJar")
+        val ret = ikvmc(ikvmcPath, outputPath, Seq(inputJar), resolvedReferences ++ transpiledDependencies, extraArgs)
+        if(ret != 0)
+          throw new RuntimeException("ikvmc.exe failed")
+
+        Set(outputPath)
+      }
+
+      cached(transpiledDependencies.toSet + inputJar)
 
       outputPath
     }
@@ -260,4 +286,10 @@ object Tasks {
   }
 
   private def isWindows: Boolean = System.getProperty("os.name").startsWith("Windows")
+
+  private def pathHash(file: File): String = {
+    val md = MessageDigest.getInstance("SHA-256")
+    md.update(file.toString.getBytes("UTF-8"))
+    String.format("%064x", new java.math.BigInteger(1, md.digest()))
+  }
 }
